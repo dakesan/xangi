@@ -10,6 +10,7 @@ export interface ClaudeCodeOptions {
   timeoutMs?: number;
   workdir?: string;
   skipPermissions?: boolean;
+  chrome?: boolean;
 }
 
 interface ClaudeCodeResponse {
@@ -30,6 +31,7 @@ export class ClaudeCodeRunner {
   private timeoutMs: number;
   private workdir?: string;
   private skipPermissions: boolean;
+  private chrome: boolean;
   private systemPrompt: string;
 
   constructor(options?: ClaudeCodeOptions) {
@@ -37,6 +39,7 @@ export class ClaudeCodeRunner {
     this.timeoutMs = options?.timeoutMs ?? DEFAULT_TIMEOUT_MS; // デフォルト5分
     this.workdir = options?.workdir;
     this.skipPermissions = options?.skipPermissions ?? false;
+    this.chrome = options?.chrome ?? false;
     this.systemPrompt = buildSystemPrompt();
   }
 
@@ -55,6 +58,10 @@ export class ClaudeCodeRunner {
 
     if (this.model) {
       args.push('--model', this.model);
+    }
+
+    if (this.chrome) {
+      args.push('--chrome');
     }
 
     // チャットプラットフォーム連携のシステムプロンプト + AGENTS.md
@@ -160,6 +167,10 @@ export class ClaudeCodeRunner {
 
     if (this.model) {
       args.push('--model', this.model);
+    }
+
+    if (this.chrome) {
+      args.push('--chrome');
     }
 
     // チャットプラットフォーム連携のシステムプロンプト + AGENTS.md
