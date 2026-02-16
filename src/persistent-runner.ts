@@ -42,7 +42,6 @@ export class PersistentRunner extends EventEmitter implements AgentRunner {
   private timeoutMs: number;
   private workdir?: string;
   private skipPermissions: boolean;
-  private chrome: boolean;
   private systemPrompt: string;
 
   constructor(options?: {
@@ -50,14 +49,12 @@ export class PersistentRunner extends EventEmitter implements AgentRunner {
     timeoutMs?: number;
     workdir?: string;
     skipPermissions?: boolean;
-    chrome?: boolean;
   }) {
     super();
     this.model = options?.model;
     this.timeoutMs = options?.timeoutMs ?? DEFAULT_TIMEOUT_MS;
     this.workdir = options?.workdir;
     this.skipPermissions = options?.skipPermissions ?? false;
-    this.chrome = options?.chrome ?? false;
     this.systemPrompt = buildPersistentSystemPrompt();
   }
 
@@ -97,10 +94,6 @@ export class PersistentRunner extends EventEmitter implements AgentRunner {
 
     if (this.model) {
       args.push('--model', this.model);
-    }
-
-    if (this.chrome) {
-      args.push('--chrome');
     }
 
     args.push('--append-system-prompt', this.systemPrompt);
