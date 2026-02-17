@@ -13,6 +13,8 @@ export interface AgentConfig {
   maxProcesses?: number;
   /** アイドルタイムアウト（ミリ秒、RunnerManager用） */
   idleTimeoutMs?: number;
+  /** Chrome ブラウザツールを有効化 */
+  chrome?: boolean;
 }
 
 export interface Config {
@@ -78,6 +80,7 @@ export function loadConfig(): Config {
     idleTimeoutMs: process.env.IDLE_TIMEOUT_MS
       ? parseInt(process.env.IDLE_TIMEOUT_MS, 10)
       : 30 * 60 * 1000, // 30分
+    chrome: process.env.CHROME_ENABLED !== 'false', // デフォルトで有効
   };
 
   return {
