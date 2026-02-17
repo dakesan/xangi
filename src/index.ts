@@ -1058,7 +1058,7 @@ async function main() {
         channel as {
           send: (content: string) => Promise<{ edit: (content: string) => Promise<unknown> }>;
         }
-      ).send('🤔 考え中...');
+      ).send('解。マスターからの指示を確認。間もなく応答を開始します...');
 
       try {
         const sessionId = getSession(channelId);
@@ -1437,7 +1437,9 @@ async function processPrompt(
     const showThinking = config.discord.showThinking ?? true;
 
     // 最初のメッセージを送信
-    const replyMessage = await message.reply('🤔 考え中.');
+    const replyMessage = await message.reply(
+      '解。マスターからの指示を確認。間もなく応答を開始します.'
+    );
 
     let result: string;
     let newSessionId: string;
@@ -1454,7 +1456,9 @@ async function processPrompt(
         if (firstTextReceived) return;
         dotCount = (dotCount % 3) + 1;
         const dots = '.'.repeat(dotCount);
-        replyMessage.edit(`🤔 考え中${dots}`).catch(() => {});
+        replyMessage
+          .edit(`解。マスターからの指示を確認。間もなく応答を開始します${dots}`)
+          .catch(() => {});
       }, 1000);
 
       const streamResult = await agentRunner.runStream(
@@ -1491,7 +1495,9 @@ async function processPrompt(
       const thinkingInterval = setInterval(() => {
         dotCount = (dotCount % 3) + 1;
         const dots = '.'.repeat(dotCount);
-        replyMessage.edit(`🤔 考え中${dots}`).catch(() => {});
+        replyMessage
+          .edit(`解。マスターからの指示を確認。間もなく応答を開始します${dots}`)
+          .catch(() => {});
       }, 1000);
 
       try {
