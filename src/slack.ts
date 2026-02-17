@@ -578,7 +578,7 @@ async function processMessage(
     // 最初のメッセージを送信
     const initialResponse = await client.chat.postMessage({
       channel: channelId,
-      text: '🤔 考え中.',
+      text: '解。マスターからの指示を確認。間もなく応答を開始します.',
       ...(threadTs && { thread_ts: threadTs }),
     });
 
@@ -644,7 +644,7 @@ async function processMessage(
           .update({
             channel: channelId,
             ts: messageTs,
-            text: `🤔 考え中${dots}`,
+            text: `解。マスターからの指示を確認。間もなく応答を開始します${dots}`,
           })
           .catch(() => {});
       }, 1000);
