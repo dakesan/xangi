@@ -425,6 +425,13 @@ export class PersistentRunner extends EventEmitter implements AgentRunner {
   }
 
   /**
+   * リクエストを処理中かどうか
+   */
+  isBusy(): boolean {
+    return this.currentItem !== null;
+  }
+
+  /**
    * サーキットブレーカーの状態を取得
    */
   getCircuitBreakerStatus(): { open: boolean; crashCount: number; lastCrashTime: number } {
