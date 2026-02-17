@@ -108,6 +108,10 @@ export class RunnerManager implements AgentRunner {
     const toRemove: string[] = [];
 
     for (const [channelId, entry] of this.pool.entries()) {
+      // Skip runners that are currently processing a request
+      if (entry.runner.getQueueLength() > 0 || entry.runner.isBusy()) {
+        continue;
+      }
       if (now - entry.lastUsed > this.idleTimeoutMs) {
         toRemove.push(channelId);
       }
