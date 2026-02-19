@@ -95,12 +95,14 @@ function getTypeLabel(
   }
 }
 
-/** Create a colored status embed for Discord messages */
-function createStatusEmbed(
-  status: 'thinking' | 'working' | 'done' | 'error',
-  text: string
-): EmbedBuilder {
+/** Create a colored status embed for Discord messages (errors only) */
+function createStatusEmbed(status: 'error', text: string): EmbedBuilder {
   return new EmbedBuilder().setColor(EMBED_COLORS[status]).setDescription(`### ${text}`);
+}
+
+/** Create a response embed wrapping the AI's reply */
+function createResponseEmbed(text: string): EmbedBuilder {
+  return new EmbedBuilder().setColor(EMBED_COLORS.done).setDescription(text);
 }
 
 async function main() {
@@ -513,7 +515,7 @@ async function main() {
           }
           const channelName = 'name' in channel ? channel.name : 'unknown';
           console.log(`[xangi] Sent message to #${channelName} (${chunks.length} chunk(s))`);
-          return { handled: true, response: `✅ #${channelName} にメッセージを送信しました` };
+          return { handled: true };
         }
       } catch (err) {
         console.error(`[xangi] Failed to send message to channel: ${channelId}`, err);
@@ -1067,7 +1069,7 @@ async function main() {
         return promptCommands.commands.map((c) => `✅ ${c.slice(0, 50)}`).join('\n');
       }
 
-      // 処理中メッセージを送信（Embed）
+      // 処理中メッセージを送信（通常テキスト）
       type MsgOptions = string | { content?: string; embeds?: EmbedBuilder[] };
       const thinkingMsg = await (
         channel as {
@@ -1076,12 +1078,7 @@ async function main() {
           ) => Promise<{ edit: (options: MsgOptions) => Promise<unknown> }>;
         }
       ).send({
-        embeds: [
-          createStatusEmbed(
-            'thinking',
-            '解。マスターからの指示を確認。間もなく応答を開始します...'
-          ),
-        ],
+        content: '解。マスターからの指示を確認。間もなく応答を開始します...',
       });
 
       try {
@@ -1118,16 +1115,18 @@ async function main() {
         const filePaths = extractFilePaths(result);
         const displayText = filePaths.length > 0 ? stripFilePaths(result) : result;
 
-        // 2000文字超の応答は分割送信
+        // 2000文字超の応答は分割送信（各チャンクをEmbed化）
         const textChunks = splitMessage(displayText, DISCORD_SAFE_LENGTH);
         await thinkingMsg.edit({
-          content: textChunks[0] || '',
-          embeds: [createStatusEmbed('done', '完了')],
+          content: '',
+          embeds: textChunks[0] ? [createResponseEmbed(textChunks[0])] : [],
         });
         if (textChunks.length > 1) {
-          const ch = channel as { send: (content: string) => Promise<unknown> };
+          const ch = channel as {
+            send: (options: { embeds: EmbedBuilder[] }) => Promise<unknown>;
+          };
           for (let i = 1; i < textChunks.length; i++) {
-            await ch.send(textChunks[i]);
+            await ch.send({ embeds: [createResponseEmbed(textChunks[i])] });
           }
         }
 
@@ -1469,11 +1468,9 @@ async function processPrompt(
     const useStreaming = config.discord.streaming ?? true;
     const showThinking = config.discord.showThinking ?? true;
 
-    // 最初のメッセージを送信（Embed）
+    // 最初のメッセージを送信（通常テキスト）
     const replyMessage = await message.reply({
-      embeds: [
-        createStatusEmbed('thinking', '解。マスターからの指示を確認。間もなく応答を開始します...'),
-      ],
+      content: '解。マスターからの指示を確認。間もなく応答を開始します...',
     });
 
     let result: string;
@@ -1493,12 +1490,7 @@ async function processPrompt(
         const dots = '.'.repeat(dotCount);
         replyMessage
           .edit({
-            embeds: [
-              createStatusEmbed(
-                'thinking',
-                `解。マスターからの指示を確認。間もなく応答を開始します${dots}`
-              ),
-            ],
+            content: `解。マスターからの指示を確認。間もなく応答を開始します${dots}`,
           })
           .catch(() => {});
       }, 1000);
@@ -1518,7 +1510,6 @@ async function processPrompt(
               replyMessage
                 .edit({
                   content: (fullText + ' ▌').slice(0, DISCORD_MAX_LENGTH),
-                  embeds: [createStatusEmbed('working', '応答を生成中...')],
                 })
                 .catch((err) => {
                   console.error('[xangi] Failed to edit message:', err.message);
@@ -1542,12 +1533,7 @@ async function processPrompt(
         const dots = '.'.repeat(dotCount);
         replyMessage
           .edit({
-            embeds: [
-              createStatusEmbed(
-                'thinking',
-                `解。マスターからの指示を確認。間もなく応答を開始します${dots}`
-              ),
-            ],
+            content: `解。マスターからの指示を確認。間もなく応答を開始します${dots}`,
           })
           .catch(() => {});
       }, 1000);
@@ -1574,18 +1560,18 @@ async function processPrompt(
     // コードブロック内のコマンドは残す（表示用テキストなので消さない）
     const cleanText = stripCommandsFromDisplay(displayText);
 
-    // 2000文字超の応答は分割送信
+    // 2000文字超の応答は分割送信（各チャンクをEmbed化）
     const chunks = splitMessage(cleanText, DISCORD_SAFE_LENGTH);
     await replyMessage.edit({
-      content: chunks[0] || '',
-      embeds: [createStatusEmbed('done', '完了')],
+      content: '',
+      embeds: chunks[0] ? [createResponseEmbed(chunks[0])] : [],
     });
     if (chunks.length > 1 && 'send' in message.channel) {
       const channel = message.channel as unknown as {
-        send: (content: string) => Promise<unknown>;
+        send: (options: { embeds: EmbedBuilder[] }) => Promise<unknown>;
       };
       for (let i = 1; i < chunks.length; i++) {
-        await channel.send(chunks[i]);
+        await channel.send({ embeds: [createResponseEmbed(chunks[i])] });
       }
     }
 
