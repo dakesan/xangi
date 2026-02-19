@@ -1,5 +1,6 @@
 import {
   Client,
+  EmbedBuilder,
   GatewayIntentBits,
   Events,
   REST,
@@ -21,7 +22,12 @@ import {
   buildPromptWithAttachments,
 } from './file-utils.js';
 import { initSettings, loadSettings, saveSettings, formatSettings } from './settings.js';
-import { DISCORD_MAX_LENGTH, DISCORD_SAFE_LENGTH, STREAM_UPDATE_INTERVAL_MS } from './constants.js';
+import {
+  DISCORD_MAX_LENGTH,
+  DISCORD_SAFE_LENGTH,
+  STREAM_UPDATE_INTERVAL_MS,
+  EMBED_COLORS,
+} from './constants.js';
 import {
   Scheduler,
   parseScheduleInput,
@@ -87,6 +93,14 @@ function getTypeLabel(
     default:
       return `⏰ 実行時刻: ${new Date(options.runAt!).toLocaleString('ja-JP', { timeZone: 'Asia/Tokyo' })}${channelInfo}`;
   }
+}
+
+/** Create a colored status embed for Discord messages */
+function createStatusEmbed(
+  status: 'thinking' | 'working' | 'done' | 'error',
+  text: string
+): EmbedBuilder {
+  return new EmbedBuilder().setColor(EMBED_COLORS[status]).setDescription(`### ${text}`);
 }
 
 async function main() {
@@ -1053,12 +1067,22 @@ async function main() {
         return promptCommands.commands.map((c) => `✅ ${c.slice(0, 50)}`).join('\n');
       }
 
-      // 処理中メッセージを送信
+      // 処理中メッセージを送信（Embed）
+      type MsgOptions = string | { content?: string; embeds?: EmbedBuilder[] };
       const thinkingMsg = await (
         channel as {
-          send: (content: string) => Promise<{ edit: (content: string) => Promise<unknown> }>;
+          send: (
+            options: MsgOptions
+          ) => Promise<{ edit: (options: MsgOptions) => Promise<unknown> }>;
         }
-      ).send('解。マスターからの指示を確認。間もなく応答を開始します...');
+      ).send({
+        embeds: [
+          createStatusEmbed(
+            'thinking',
+            '解。マスターからの指示を確認。間もなく応答を開始します...'
+          ),
+        ],
+      });
 
       try {
         const sessionId = getSession(channelId);
@@ -1096,7 +1120,10 @@ async function main() {
 
         // 2000文字超の応答は分割送信
         const textChunks = splitMessage(displayText, DISCORD_SAFE_LENGTH);
-        await thinkingMsg.edit(textChunks[0] || '✅');
+        await thinkingMsg.edit({
+          content: textChunks[0] || '',
+          embeds: [createStatusEmbed('done', '完了')],
+        });
         if (textChunks.length > 1) {
           const ch = channel as { send: (content: string) => Promise<unknown> };
           for (let i = 1; i < textChunks.length; i++) {
@@ -1115,9 +1142,15 @@ async function main() {
         return result;
       } catch (error) {
         if (error instanceof Error && error.message === 'Request cancelled by user') {
-          await thinkingMsg.edit('🛑 タスクを停止しました');
+          await thinkingMsg.edit({
+            content: '',
+            embeds: [createStatusEmbed('error', 'タスクを停止しました')],
+          });
         } else {
-          await thinkingMsg.edit('❌ エラーが発生しました');
+          await thinkingMsg.edit({
+            content: '',
+            embeds: [createStatusEmbed('error', 'エラーが発生しました')],
+          });
         }
         throw error;
       }
@@ -1436,10 +1469,12 @@ async function processPrompt(
     const useStreaming = config.discord.streaming ?? true;
     const showThinking = config.discord.showThinking ?? true;
 
-    // 最初のメッセージを送信
-    const replyMessage = await message.reply(
-      '解。マスターからの指示を確認。間もなく応答を開始します.'
-    );
+    // 最初のメッセージを送信（Embed）
+    const replyMessage = await message.reply({
+      embeds: [
+        createStatusEmbed('thinking', '解。マスターからの指示を確認。間もなく応答を開始します...'),
+      ],
+    });
 
     let result: string;
     let newSessionId: string;
@@ -1457,7 +1492,14 @@ async function processPrompt(
         dotCount = (dotCount % 3) + 1;
         const dots = '.'.repeat(dotCount);
         replyMessage
-          .edit(`解。マスターからの指示を確認。間もなく応答を開始します${dots}`)
+          .edit({
+            embeds: [
+              createStatusEmbed(
+                'thinking',
+                `解。マスターからの指示を確認。間もなく応答を開始します${dots}`
+              ),
+            ],
+          })
           .catch(() => {});
       }, 1000);
 
@@ -1474,7 +1516,10 @@ async function processPrompt(
               pendingUpdate = true;
               lastUpdateTime = now;
               replyMessage
-                .edit((fullText + ' ▌').slice(0, DISCORD_MAX_LENGTH))
+                .edit({
+                  content: (fullText + ' ▌').slice(0, DISCORD_MAX_LENGTH),
+                  embeds: [createStatusEmbed('working', '応答を生成中...')],
+                })
                 .catch((err) => {
                   console.error('[xangi] Failed to edit message:', err.message);
                 })
@@ -1496,7 +1541,14 @@ async function processPrompt(
         dotCount = (dotCount % 3) + 1;
         const dots = '.'.repeat(dotCount);
         replyMessage
-          .edit(`解。マスターからの指示を確認。間もなく応答を開始します${dots}`)
+          .edit({
+            embeds: [
+              createStatusEmbed(
+                'thinking',
+                `解。マスターからの指示を確認。間もなく応答を開始します${dots}`
+              ),
+            ],
+          })
           .catch(() => {});
       }, 1000);
 
@@ -1524,7 +1576,10 @@ async function processPrompt(
 
     // 2000文字超の応答は分割送信
     const chunks = splitMessage(cleanText, DISCORD_SAFE_LENGTH);
-    await replyMessage.edit(chunks[0] || '✅');
+    await replyMessage.edit({
+      content: chunks[0] || '',
+      embeds: [createStatusEmbed('done', '完了')],
+    });
     if (chunks.length > 1 && 'send' in message.channel) {
       const channel = message.channel as unknown as {
         send: (content: string) => Promise<unknown>;
@@ -1560,7 +1615,7 @@ async function processPrompt(
       return null;
     }
     console.error('[xangi] Error:', error);
-    await message.reply('エラーが発生しました');
+    await message.reply({ embeds: [createStatusEmbed('error', 'エラーが発生しました')] });
     return null;
   } finally {
     // 👀 リアクションを削除
