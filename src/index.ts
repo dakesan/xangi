@@ -100,10 +100,7 @@ function createStatusEmbed(
   status: 'thinking' | 'working' | 'done' | 'error',
   text: string
 ): EmbedBuilder {
-  const icons = { thinking: '🌀', working: '🔧', done: '✅', error: '❌' };
-  return new EmbedBuilder()
-    .setColor(EMBED_COLORS[status])
-    .setDescription(`${icons[status]} ${text}`);
+  return new EmbedBuilder().setColor(EMBED_COLORS[status]).setDescription(`### ${text}`);
 }
 
 async function main() {
