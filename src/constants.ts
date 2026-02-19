@@ -18,5 +18,15 @@ export const EMBED_COLORS = {
   error: 0xe74c3c, // red
 } as const;
 
+// Status indicator embeds for Discord messages
+export const STATUS_INDICATORS = {
+  ack: { text: '解', color: EMBED_COLORS.thinking },
+  announce: { text: '告', color: EMBED_COLORS.thinking },
+  affirm: { text: '是', color: EMBED_COLORS.done },
+  deny: { text: '否', color: EMBED_COLORS.error },
+  success: { text: '成功しました', color: EMBED_COLORS.done },
+  present: { text: '提示します', color: EMBED_COLORS.thinking },
+} as const;
+
 // タイムアウト
 export const DEFAULT_TIMEOUT_MS = 300000; // 5分

@@ -27,6 +27,7 @@ import {
   DISCORD_SAFE_LENGTH,
   STREAM_UPDATE_INTERVAL_MS,
   EMBED_COLORS,
+  STATUS_INDICATORS,
 } from './constants.js';
 import {
   Scheduler,
@@ -95,14 +96,15 @@ function getTypeLabel(
   }
 }
 
-/** Create a colored status embed for Discord messages (errors only) */
-function createStatusEmbed(status: 'error', text: string): EmbedBuilder {
-  return new EmbedBuilder().setColor(EMBED_COLORS[status]).setDescription(`### ${text}`);
+/** Create a small status indicator embed */
+function createStatusEmbed(text: string, color: number = EMBED_COLORS.error): EmbedBuilder {
+  return new EmbedBuilder().setColor(color).setDescription(`### ${text}`);
 }
 
-/** Create a response embed wrapping the AI's reply */
-function createResponseEmbed(text: string): EmbedBuilder {
-  return new EmbedBuilder().setColor(EMBED_COLORS.done).setDescription(text);
+/** Create a status indicator embed from predefined indicators */
+function indicator(key: keyof typeof STATUS_INDICATORS): EmbedBuilder {
+  const { text, color } = STATUS_INDICATORS[key];
+  return createStatusEmbed(text, color);
 }
 
 async function main() {
@@ -515,11 +517,27 @@ async function main() {
           }
           const channelName = 'name' in channel ? channel.name : 'unknown';
           console.log(`[xangi] Sent message to #${channelName} (${chunks.length} chunk(s))`);
+          // Send success indicator to source channel
+          if (sourceMessage && 'send' in sourceMessage.channel) {
+            await (
+              sourceMessage.channel as {
+                send: (options: { embeds: EmbedBuilder[] }) => Promise<unknown>;
+              }
+            ).send({ embeds: [indicator('success')] });
+          }
           return { handled: true };
         }
       } catch (err) {
         console.error(`[xangi] Failed to send message to channel: ${channelId}`, err);
-        return { handled: true, response: `❌ チャンネルへの送信に失敗しました` };
+        // Send deny indicator to source channel
+        if (sourceMessage && 'send' in sourceMessage.channel) {
+          await (
+            sourceMessage.channel as {
+              send: (options: { content: string; embeds: EmbedBuilder[] }) => Promise<unknown>;
+            }
+          ).send({ content: 'チャンネルへの送信に失敗しました', embeds: [indicator('deny')] });
+        }
+        return { handled: true };
       }
     }
 
@@ -1115,25 +1133,29 @@ async function main() {
         const filePaths = extractFilePaths(result);
         const displayText = filePaths.length > 0 ? stripFilePaths(result) : result;
 
-        // 2000文字超の応答は分割送信（各チャンクをEmbed化）
+        // 2000文字超の応答は分割送信（最初のチャンクに「解」Embed付き）
         const textChunks = splitMessage(displayText, DISCORD_SAFE_LENGTH);
         await thinkingMsg.edit({
-          content: '',
-          embeds: textChunks[0] ? [createResponseEmbed(textChunks[0])] : [],
+          content: textChunks[0] || '',
+          embeds: [indicator('announce')],
         });
         if (textChunks.length > 1) {
-          const ch = channel as {
-            send: (options: { embeds: EmbedBuilder[] }) => Promise<unknown>;
-          };
+          const ch = channel as { send: (content: string) => Promise<unknown> };
           for (let i = 1; i < textChunks.length; i++) {
-            await ch.send({ embeds: [createResponseEmbed(textChunks[i])] });
+            await ch.send(textChunks[i]);
           }
         }
 
         if (filePaths.length > 0) {
           await (
-            channel as { send: (options: { files: { attachment: string }[] }) => Promise<unknown> }
+            channel as {
+              send: (options: {
+                embeds: EmbedBuilder[];
+                files: { attachment: string }[];
+              }) => Promise<unknown>;
+            }
           ).send({
+            embeds: [indicator('present')],
             files: filePaths.map((fp) => ({ attachment: fp })),
           });
         }
@@ -1142,13 +1164,13 @@ async function main() {
       } catch (error) {
         if (error instanceof Error && error.message === 'Request cancelled by user') {
           await thinkingMsg.edit({
-            content: '',
-            embeds: [createStatusEmbed('error', 'タスクを停止しました')],
+            content: 'タスクを停止しました',
+            embeds: [indicator('deny')],
           });
         } else {
           await thinkingMsg.edit({
-            content: '',
-            embeds: [createStatusEmbed('error', 'エラーが発生しました')],
+            content: 'エラーが発生しました',
+            embeds: [indicator('deny')],
           });
         }
         throw error;
@@ -1560,18 +1582,18 @@ async function processPrompt(
     // コードブロック内のコマンドは残す（表示用テキストなので消さない）
     const cleanText = stripCommandsFromDisplay(displayText);
 
-    // 2000文字超の応答は分割送信（各チャンクをEmbed化）
+    // 2000文字超の応答は分割送信（最初のチャンクに「解」Embed付き）
     const chunks = splitMessage(cleanText, DISCORD_SAFE_LENGTH);
     await replyMessage.edit({
-      content: '',
-      embeds: chunks[0] ? [createResponseEmbed(chunks[0])] : [],
+      content: chunks[0] || '',
+      embeds: [indicator('ack')],
     });
     if (chunks.length > 1 && 'send' in message.channel) {
       const channel = message.channel as unknown as {
-        send: (options: { embeds: EmbedBuilder[] }) => Promise<unknown>;
+        send: (content: string) => Promise<unknown>;
       };
       for (let i = 1; i < chunks.length; i++) {
-        await channel.send({ embeds: [createResponseEmbed(chunks[i])] });
+        await channel.send(chunks[i]);
       }
     }
 
@@ -1582,9 +1604,13 @@ async function processPrompt(
       try {
         await (
           message.channel as unknown as {
-            send: (options: { files: { attachment: string }[] }) => Promise<unknown>;
+            send: (options: {
+              embeds: EmbedBuilder[];
+              files: { attachment: string }[];
+            }) => Promise<unknown>;
           }
         ).send({
+          embeds: [indicator('present')],
           files: filePaths.map((fp) => ({ attachment: fp })),
         });
         console.log(`[xangi] Sent ${filePaths.length} file(s) to Discord`);
@@ -1601,7 +1627,7 @@ async function processPrompt(
       return null;
     }
     console.error('[xangi] Error:', error);
-    await message.reply({ embeds: [createStatusEmbed('error', 'エラーが発生しました')] });
+    await message.reply({ content: 'エラーが発生しました', embeds: [indicator('deny')] });
     return null;
   } finally {
     // 👀 リアクションを削除
