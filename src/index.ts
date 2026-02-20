@@ -1,6 +1,5 @@
 import {
   Client,
-  EmbedBuilder,
   GatewayIntentBits,
   Events,
   REST,
@@ -22,13 +21,7 @@ import {
   buildPromptWithAttachments,
 } from './file-utils.js';
 import { initSettings, loadSettings, saveSettings, formatSettings } from './settings.js';
-import {
-  DISCORD_MAX_LENGTH,
-  DISCORD_SAFE_LENGTH,
-  STREAM_UPDATE_INTERVAL_MS,
-  EMBED_COLORS,
-  STATUS_INDICATORS,
-} from './constants.js';
+import { DISCORD_MAX_LENGTH, DISCORD_SAFE_LENGTH, STREAM_UPDATE_INTERVAL_MS } from './constants.js';
 import {
   Scheduler,
   parseScheduleInput,
@@ -94,17 +87,6 @@ function getTypeLabel(
     default:
       return `⏰ 実行時刻: ${new Date(options.runAt!).toLocaleString('ja-JP', { timeZone: 'Asia/Tokyo' })}${channelInfo}`;
   }
-}
-
-/** Create a small status indicator embed */
-function createStatusEmbed(text: string, color: number = EMBED_COLORS.error): EmbedBuilder {
-  return new EmbedBuilder().setColor(color).setDescription(`### ${text}`);
-}
-
-/** Create a status indicator embed from predefined indicators */
-function indicator(key: keyof typeof STATUS_INDICATORS): EmbedBuilder {
-  const { text, color } = STATUS_INDICATORS[key];
-  return createStatusEmbed(text, color);
 }
 
 async function main() {
@@ -521,9 +503,9 @@ async function main() {
           if (sourceMessage && 'send' in sourceMessage.channel) {
             await (
               sourceMessage.channel as {
-                send: (options: { embeds: EmbedBuilder[] }) => Promise<unknown>;
+                send: (content: string) => Promise<unknown>;
               }
-            ).send({ embeds: [indicator('success')] });
+            ).send('送信しました');
           }
           return { handled: true };
         }
@@ -533,9 +515,9 @@ async function main() {
         if (sourceMessage && 'send' in sourceMessage.channel) {
           await (
             sourceMessage.channel as {
-              send: (options: { content: string; embeds: EmbedBuilder[] }) => Promise<unknown>;
+              send: (content: string) => Promise<unknown>;
             }
-          ).send({ content: 'チャンネルへの送信に失敗しました', embeds: [indicator('deny')] });
+          ).send('チャンネルへの送信に失敗しました');
         }
         return { handled: true };
       }
@@ -1088,7 +1070,7 @@ async function main() {
       }
 
       // 処理中メッセージを送信（通常テキスト）
-      type MsgOptions = string | { content?: string; embeds?: EmbedBuilder[] };
+      type MsgOptions = string | { content?: string };
       const thinkingMsg = await (
         channel as {
           send: (
@@ -1137,7 +1119,6 @@ async function main() {
         const textChunks = splitMessage(displayText, DISCORD_SAFE_LENGTH);
         await thinkingMsg.edit({
           content: textChunks[0] || '',
-          embeds: [indicator('announce')],
         });
         if (textChunks.length > 1) {
           const ch = channel as { send: (content: string) => Promise<unknown> };
@@ -1149,13 +1130,9 @@ async function main() {
         if (filePaths.length > 0) {
           await (
             channel as {
-              send: (options: {
-                embeds: EmbedBuilder[];
-                files: { attachment: string }[];
-              }) => Promise<unknown>;
+              send: (options: { files: { attachment: string }[] }) => Promise<unknown>;
             }
           ).send({
-            embeds: [indicator('present')],
             files: filePaths.map((fp) => ({ attachment: fp })),
           });
         }
@@ -1165,12 +1142,10 @@ async function main() {
         if (error instanceof Error && error.message === 'Request cancelled by user') {
           await thinkingMsg.edit({
             content: 'タスクを停止しました',
-            embeds: [indicator('deny')],
           });
         } else {
           await thinkingMsg.edit({
             content: 'エラーが発生しました',
-            embeds: [indicator('deny')],
           });
         }
         throw error;
@@ -1582,11 +1557,10 @@ async function processPrompt(
     // コードブロック内のコマンドは残す（表示用テキストなので消さない）
     const cleanText = stripCommandsFromDisplay(displayText);
 
-    // 2000文字超の応答は分割送信（最初のチャンクに「解」Embed付き）
+    // 2000 characters exceeded: split into multiple messages
     const chunks = splitMessage(cleanText, DISCORD_SAFE_LENGTH);
     await replyMessage.edit({
       content: chunks[0] || '',
-      embeds: [indicator('ack')],
     });
     if (chunks.length > 1 && 'send' in message.channel) {
       const channel = message.channel as unknown as {
@@ -1604,13 +1578,9 @@ async function processPrompt(
       try {
         await (
           message.channel as unknown as {
-            send: (options: {
-              embeds: EmbedBuilder[];
-              files: { attachment: string }[];
-            }) => Promise<unknown>;
+            send: (options: { files: { attachment: string }[] }) => Promise<unknown>;
           }
         ).send({
-          embeds: [indicator('present')],
           files: filePaths.map((fp) => ({ attachment: fp })),
         });
         console.log(`[xangi] Sent ${filePaths.length} file(s) to Discord`);
@@ -1627,7 +1597,7 @@ async function processPrompt(
       return null;
     }
     console.error('[xangi] Error:', error);
-    await message.reply({ content: 'エラーが発生しました', embeds: [indicator('deny')] });
+    await message.reply('エラーが発生しました');
     return null;
   } finally {
     // 👀 リアクションを削除
