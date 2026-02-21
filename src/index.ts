@@ -1604,7 +1604,7 @@ async function processPrompt(
         message.channel as unknown as {
           send: (content: string) => Promise<unknown>;
         }
-      ).send(`<@${userId}> 応答が完了しました。`);
+      ).send(`<@${userId}> 告。応答が完了しています。`);
     }
 
     // AIの応答を返す（!discord コマンド処理用）
