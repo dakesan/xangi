@@ -127,7 +127,7 @@ pm2 logs xangi     # ログ確認
 | `SKIP_PERMISSIONS` | デフォルトで許可スキップ | `false` |
 | `TIMEOUT_MS` | タイムアウト（ミリ秒） | `300000` |
 | `MAX_PROCESSES` | 同時実行プロセス数の上限 | `10` |
-| `IDLE_TIMEOUT_MS` | アイドルプロセスの自動終了時間（ミリ秒） | `1800000`（30分） |
+| `IDLE_TIMEOUT_MS` | アイドルプロセスの自動終了時間（ミリ秒） | `14400000`（4時間） |
 | `GH_TOKEN` | GitHub CLI用トークン | - |
 
 全ての環境変数は [設計ドキュメント](docs/design.md) を参照してください。

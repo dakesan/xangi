@@ -79,7 +79,7 @@ export function loadConfig(): Config {
     maxProcesses: process.env.MAX_PROCESSES ? parseInt(process.env.MAX_PROCESSES, 10) : 10,
     idleTimeoutMs: process.env.IDLE_TIMEOUT_MS
       ? parseInt(process.env.IDLE_TIMEOUT_MS, 10)
-      : 30 * 60 * 1000, // 30分
+      : 4 * 60 * 60 * 1000, // 4時間
     chrome: process.env.CHROME_ENABLED !== 'false', // デフォルトで有効
   };
 
