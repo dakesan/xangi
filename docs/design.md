@@ -288,7 +288,7 @@ prompts/
 | `TIMEOUT_MS` | タイムアウト（ミリ秒） | `300000` |
 | `PERSISTENT_MODE` | 常駐プロセスモード（高速応答） | `true` |
 | `MAX_PROCESSES` | 同時実行プロセス数の上限 | `10` |
-| `IDLE_TIMEOUT_MS` | アイドルプロセスの自動終了時間（ミリ秒） | `1800000`（30分） |
+| `IDLE_TIMEOUT_MS` | アイドルプロセスの自動終了時間（ミリ秒） | `14400000`（4時間） |
 | `DATA_DIR` | データ保存ディレクトリ | `/workspace/.xangi` |
 
 ### GitHub CLI

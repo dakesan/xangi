@@ -37,7 +37,7 @@ export class RunnerManager implements AgentRunner {
   ) {
     this.agentConfig = agentConfig;
     this.maxProcesses = options?.maxProcesses ?? 10;
-    this.idleTimeoutMs = options?.idleTimeoutMs ?? 30 * 60 * 1000; // 30分
+    this.idleTimeoutMs = options?.idleTimeoutMs ?? 4 * 60 * 60 * 1000; // 4時間
 
     // 定期クリーンアップ開始
     this.cleanupInterval = setInterval(() => this.cleanupIdle(), RunnerManager.CLEANUP_INTERVAL_MS);
