@@ -1137,6 +1137,14 @@ async function main() {
           });
         }
 
+        // 完了通知（メンション付き新規メッセージで通知を飛ばす）
+        const notifyUserId = config.discord.allowedUsers?.[0];
+        if (notifyUserId) {
+          await (channel as { send: (content: string) => Promise<unknown> }).send(
+            `<@${notifyUserId}> スケジュール実行が完了しました。`
+          );
+        }
+
         return result;
       } catch (error) {
         if (error instanceof Error && error.message === 'Request cancelled by user') {
@@ -1587,6 +1595,16 @@ async function processPrompt(
       } catch (err) {
         console.error('[xangi] Failed to send files:', err);
       }
+    }
+
+    // 完了通知（メンション付き新規メッセージで通知を飛ばす）
+    if ('send' in message.channel) {
+      const userId = message.author.id;
+      await (
+        message.channel as unknown as {
+          send: (content: string) => Promise<unknown>;
+        }
+      ).send(`<@${userId}> 応答が完了しました。`);
     }
 
     // AIの応答を返す（!discord コマンド処理用）
