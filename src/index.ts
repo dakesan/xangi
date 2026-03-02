@@ -1057,8 +1057,12 @@ async function main() {
 
     const isMentioned = message.mentions.has(client.user!);
     const isDM = !message.guild;
+    // Check both the channel ID and parent ID (for forum/thread channels)
+    const parentId = message.channel.isThread() ? message.channel.parentId : null;
     const isAutoReplyChannel =
-      config.discord.autoReplyChannels?.includes(message.channel.id) ?? false;
+      (config.discord.autoReplyChannels?.includes(message.channel.id) ||
+        (parentId && config.discord.autoReplyChannels?.includes(parentId))) ??
+      false;
 
     if (!isMentioned && !isDM && !isAutoReplyChannel) return;
 
