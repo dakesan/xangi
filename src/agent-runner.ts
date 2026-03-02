@@ -29,6 +29,8 @@ export interface AgentRunner {
   runStream(prompt: string, callbacks: StreamCallbacks, options?: RunOptions): Promise<RunResult>;
   /** 現在処理中のリクエストをキャンセル */
   cancel?(channelId?: string): boolean;
+  /** 全ランナーをシャットダウン（子プロセス終了） */
+  shutdown?(): void;
 }
 
 /**

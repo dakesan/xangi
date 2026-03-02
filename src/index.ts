@@ -335,7 +335,10 @@ async function main() {
         return;
       }
       await interaction.reply('🔄 再起動します...');
-      setTimeout(() => process.exit(0), 1000);
+      setTimeout(() => {
+        agentRunner.shutdown?.();
+        process.exit(0);
+      }, 1000);
       return;
     }
 
@@ -1350,9 +1353,10 @@ async function main() {
   // スケジューラの全ジョブを開始
   scheduler.startAll(config.scheduler);
 
-  // シャットダウン時にスケジューラを停止
+  // シャットダウン時にランナーとスケジューラを停止
   const shutdown = () => {
-    console.log('[xangi] Shutting down scheduler...');
+    console.log('[xangi] Shutting down...');
+    agentRunner.shutdown?.();
     scheduler.stopAll();
     process.exit(0);
   };
@@ -1745,7 +1749,7 @@ async function processPrompt(
     }
 
     // AIの応答から SYSTEM_COMMAND: を検知して実行
-    handleSettingsFromResponse(result);
+    handleSettingsFromResponse(result, agentRunner);
 
     if (filePaths.length > 0 && 'send' in message.channel) {
       try {
@@ -1797,7 +1801,7 @@ async function processPrompt(
  * AIの応答から SYSTEM_COMMAND: を検知して実行
  * 形式: SYSTEM_COMMAND:restart / SYSTEM_COMMAND:set key=value
  */
-function handleSettingsFromResponse(text: string): void {
+function handleSettingsFromResponse(text: string, runner?: AgentRunner): void {
   const commands = text.match(/^SYSTEM_COMMAND:(.+)$/gm);
   if (!commands) return;
 
@@ -1811,7 +1815,10 @@ function handleSettingsFromResponse(text: string): void {
         continue;
       }
       console.log('[xangi] Restart requested by agent, restarting in 1s...');
-      setTimeout(() => process.exit(0), 1000);
+      setTimeout(() => {
+        runner?.shutdown?.();
+        process.exit(0);
+      }, 1000);
       return;
     }
 
