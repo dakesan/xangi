@@ -142,7 +142,7 @@ function splitTextByBytes(text: string, maxBytes: number): string[] {
 /**
  * AIの応答から SYSTEM_COMMAND: を検知して実行
  */
-function handleSystemCommands(text: string): void {
+function handleSystemCommands(text: string, runner?: AgentRunner): void {
   const commands = text.match(/^SYSTEM_COMMAND:(.+)$/gm);
   if (!commands) return;
 
@@ -156,7 +156,10 @@ function handleSystemCommands(text: string): void {
         continue;
       }
       console.log('[slack] Restart requested by agent, restarting in 1s...');
-      setTimeout(() => process.exit(0), 1000);
+      setTimeout(() => {
+        runner?.shutdown?.();
+        process.exit(0);
+      }, 1000);
       return;
     }
 
@@ -532,7 +535,10 @@ export async function startSlackBot(options: SlackChannelOptions): Promise<void>
       return;
     }
     await respond({ text: '🔄 再起動します...' });
-    setTimeout(() => process.exit(0), 1000);
+    setTimeout(() => {
+      agentRunner.shutdown?.();
+      process.exit(0);
+    }, 1000);
   });
 
   await app.start();
@@ -669,7 +675,7 @@ async function processMessage(
     displayText = displayText.replace(/^SYSTEM_COMMAND:.+$/gm, '').trim();
 
     // SYSTEM_COMMAND: を検知して実行
-    handleSystemCommands(result);
+    handleSystemCommands(result, agentRunner);
 
     // 最終結果を更新（長い場合は分割送信）
     await sendSlackResult(client, channelId, messageTs, threadTs, displayText || '✅');
