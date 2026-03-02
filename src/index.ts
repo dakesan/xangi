@@ -1245,7 +1245,9 @@ async function main() {
           ) => Promise<{ edit: (options: MsgOptions) => Promise<unknown> }>;
         }
       ).send({
-        content: '解。マスターからの指示を確認。間もなく応答を開始します...',
+        content:
+          process.env.THINKING_MESSAGE ??
+          '解。マスターからの指示を確認。間もなく応答を開始します...',
       });
 
       try {
@@ -1773,7 +1775,7 @@ async function processPrompt(
         message.channel as unknown as {
           send: (content: string) => Promise<unknown>;
         }
-      ).send(`<@${userId}> 告。応答が完了しています。`);
+      ).send(`<@${userId}> ${process.env.COMPLETION_MESSAGE ?? '告。応答が完了しています。'}`);
     }
 
     // AIの応答を返す（!discord コマンド処理用）
