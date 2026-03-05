@@ -1825,16 +1825,21 @@ async function processPrompt(
 
     // 2000 characters exceeded: split into multiple messages
     const chunks = splitMessage(cleanText, DISCORD_SAFE_LENGTH);
-    await replyMessage.edit({
-      content: chunks[0] || '',
-    });
-    if (chunks.length > 1 && 'send' in message.channel) {
-      const channel = message.channel as unknown as {
-        send: (content: string) => Promise<unknown>;
-      };
-      for (let i = 1; i < chunks.length; i++) {
-        await channel.send(chunks[i]);
+    if (chunks.length > 0 && chunks[0]) {
+      await replyMessage.edit({
+        content: chunks[0],
+      });
+      if (chunks.length > 1 && 'send' in message.channel) {
+        const channel = message.channel as unknown as {
+          send: (content: string) => Promise<unknown>;
+        };
+        for (let i = 1; i < chunks.length; i++) {
+          await channel.send(chunks[i]);
+        }
       }
+    } else {
+      // Response was commands-only; remove the placeholder reply
+      await replyMessage.delete().catch(() => {});
     }
 
     // AIの応答から SYSTEM_COMMAND: を検知して実行
