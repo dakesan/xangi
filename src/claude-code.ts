@@ -4,6 +4,7 @@ import type { RunOptions, RunResult, StreamCallbacks } from './agent-runner.js';
 import { mergeTexts, sanitizeSurrogates } from './agent-runner.js';
 import { DEFAULT_TIMEOUT_MS } from './constants.js';
 import { buildSystemPrompt } from './base-runner.js';
+import type { ChatPlatform } from './config.js';
 import { logPrompt, logResponse } from './transcript-logger.js';
 
 export interface ClaudeCodeOptions {
@@ -13,6 +14,7 @@ export interface ClaudeCodeOptions {
   workdir?: string;
   skipPermissions?: boolean;
   chrome?: boolean;
+  platform?: ChatPlatform;
 }
 
 interface ClaudeCodeResponse {
@@ -44,7 +46,7 @@ export class ClaudeCodeRunner {
     this.workdir = options?.workdir;
     this.skipPermissions = options?.skipPermissions ?? false;
     this.chrome = options?.chrome ?? false;
-    this.systemPrompt = buildSystemPrompt();
+    this.systemPrompt = buildSystemPrompt(options?.platform);
   }
 
   async run(rawPrompt: string, options?: RunOptions): Promise<RunResult> {
