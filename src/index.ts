@@ -15,6 +15,7 @@ import {
   ButtonStyle,
 } from 'discord.js';
 import { loadConfig } from './config.js';
+import { resolveApproval, requestApproval, setApprovalEnabled } from './approval.js';
 import { createAgentRunner, getBackendDisplayName, type AgentRunner } from './agent-runner.js';
 import { ClaudeCodeRunner } from './claude-code.js';
 import { processManager } from './process-manager.js';
@@ -150,6 +151,43 @@ function createCompletedButtons(): ActionRowBuilder<ButtonBuilder>[] {
   return [sessionRow, modelRow];
 }
 
+/**
+ * ツール入力の要約を生成（Discord表示用）
+ */
+function formatToolInput(toolName: string, input: Record<string, unknown>): string {
+  switch (toolName) {
+    case 'Read':
+      return input.file_path ? `: ${String(input.file_path).split('/').slice(-2).join('/')}` : '';
+    case 'Edit':
+    case 'Write':
+      return input.file_path ? `: ${String(input.file_path).split('/').slice(-2).join('/')}` : '';
+    case 'Bash': {
+      if (!input.command) return '';
+      const cmd = String(input.command);
+      return `: \`${cmd.slice(0, 60)}${cmd.length > 60 ? '...' : ''}\``;
+    }
+    case 'Glob':
+      return input.pattern ? `: ${String(input.pattern)}` : '';
+    case 'Grep':
+      return input.pattern ? `: ${String(input.pattern)}` : '';
+    case 'WebFetch':
+      return input.url ? `: ${String(input.url).slice(0, 60)}` : '';
+    case 'Agent':
+      return input.description ? `: ${String(input.description)}` : '';
+    case 'Skill':
+      return input.skill ? `: ${String(input.skill)}` : '';
+    default:
+      // MCPツール (mcp__server__tool 形式)
+      if (toolName.startsWith('mcp__')) {
+        const parts = toolName.split('__');
+        const server = parts[1] || '';
+        const tool = parts[2] || '';
+        return ` (${server}/${tool})`;
+      }
+      return '';
+  }
+}
+
 async function main() {
   const config = loadConfig();
 
@@ -202,6 +240,11 @@ async function main() {
 
   // チャンネルモデル設定を初期化
   initChannelModels(dataDir);
+
+  // ツール承認の有効/無効（デフォルト無効）
+  if (process.env.APPROVAL_ENABLED === 'true') {
+    setApprovalEnabled(true);
+  }
 
   // スラッシュコマンド定義
   const commands: ReturnType<SlashCommandBuilder['toJSON']>[] = [
@@ -340,6 +383,51 @@ async function main() {
     } catch (error) {
       console.error('[xangi] Failed to register slash commands:', error);
     }
+
+    // 承認サーバー起動（APPROVAL_ENABLED=true の場合のみ）
+    if (process.env.APPROVAL_ENABLED === 'true') {
+      const { startApprovalServer } = await import('./approval-server.js');
+      startApprovalServer(async (toolName, toolInput, dangerDescription) => {
+        // 承認チャンネル（autoReplyChannelsの最初のチャンネルを使用）
+        const approvalChannelId = config.discord.autoReplyChannels?.[0];
+        if (!approvalChannelId) return true; // チャンネル未設定なら許可
+        const channel = c.channels.cache.get(approvalChannelId);
+        if (!channel || !('send' in channel)) return true;
+
+        const cmdDisplay =
+          toolName === 'Bash'
+            ? `\`${String(toolInput.command || '').slice(0, 100)}\``
+            : `${toolName}: ${JSON.stringify(toolInput).slice(0, 100)}`;
+
+        return requestApproval(
+          approvalChannelId,
+          { command: cmdDisplay, matches: dangerDescription },
+          (approvalId, danger) => {
+            const row = new ActionRowBuilder<ButtonBuilder>().addComponents(
+              new ButtonBuilder()
+                .setCustomId(`xangi_approve_${approvalId}`)
+                .setLabel('許可')
+                .setStyle(ButtonStyle.Success),
+              new ButtonBuilder()
+                .setCustomId(`xangi_deny_${approvalId}`)
+                .setLabel('拒否')
+                .setStyle(ButtonStyle.Danger)
+            );
+            (
+              channel as unknown as {
+                send: (options: {
+                  content: string;
+                  components: ActionRowBuilder<ButtonBuilder>[];
+                }) => Promise<unknown>;
+              }
+            ).send({
+              content: `⚠️ **危険なコマンドを検知しました**\n${danger.command}\n検知理由: ${danger.matches.join(', ')}`,
+              components: [row],
+            });
+          }
+        );
+      });
+    }
   });
 
   // スラッシュコマンド処理
@@ -396,6 +484,20 @@ async function main() {
           content: `🧠 モデルを **Opus (${effort})** に設定しました`,
           ephemeral: true,
         });
+        return;
+      }
+
+      // Approval buttons: xangi_approve_*, xangi_deny_*
+      if (interaction.customId.startsWith('xangi_approve_')) {
+        const approvalId = interaction.customId.replace('xangi_approve_', '');
+        resolveApproval(approvalId, true);
+        await interaction.reply({ content: '✅ 許可しました', ephemeral: true });
+        return;
+      }
+      if (interaction.customId.startsWith('xangi_deny_')) {
+        const approvalId = interaction.customId.replace('xangi_deny_', '');
+        resolveApproval(approvalId, false);
+        await interaction.reply({ content: '❌ 拒否しました', ephemeral: true });
         return;
       }
 
@@ -1699,19 +1801,33 @@ async function main() {
         const filePaths = extractFilePaths(result);
         const displayText = filePaths.length > 0 ? stripFilePaths(result) : result;
 
-        // 2000文字超の応答は分割送信（最初のチャンクに「解」Embed付き）
-        const textChunks = splitMessage(displayText, DISCORD_SAFE_LENGTH);
-        await thinkingMsg.edit({
-          content: textChunks[0] || '',
-        });
+        // === セパレータで明示的に分割（content-digest等で複数投稿を1応答に含める用途）
+        // LLMが前後に空白や余分な改行を入れることがあるため、正規表現で緩くマッチ
+        const SEPARATOR_REGEX = /\n\s*===\s*\n/;
+        const messageParts = SEPARATOR_REGEX.test(displayText)
+          ? displayText
+              .split(SEPARATOR_REGEX)
+              .map((p) => p.trim())
+              .filter(Boolean)
+          : [displayText];
+
+        // 最初のパートは既存のthinkingMsgを編集して送信
+        const firstChunks = splitMessage(messageParts[0], DISCORD_SAFE_LENGTH);
+        await thinkingMsg.edit(firstChunks[0] || '✅');
         // 最後に送信したメッセージIDを記録（スケジューラー経由）
         if ('id' in thinkingMsg) {
           lastSentMessageIds.set(channelId, (thinkingMsg as { id: string }).id);
         }
-        if (textChunks.length > 1) {
-          const ch = channel as { send: (content: string) => Promise<unknown> };
-          for (let i = 1; i < textChunks.length; i++) {
-            await ch.send(textChunks[i]);
+        const ch = channel as { send: (content: string) => Promise<unknown> };
+        // 最初のパートの残りチャンク
+        for (let i = 1; i < firstChunks.length; i++) {
+          await ch.send(firstChunks[i]);
+        }
+        // 2つ目以降のパートは新規メッセージとして送信
+        for (let p = 1; p < messageParts.length; p++) {
+          const textChunks = splitMessage(messageParts[p], DISCORD_SAFE_LENGTH);
+          for (const chunk of textChunks) {
+            await ch.send(chunk);
           }
         }
 
@@ -2145,6 +2261,20 @@ async function processPrompt(
                   });
               }
             },
+            onToolUse: (toolName, toolInput) => {
+              if (!firstTextReceived) {
+                firstTextReceived = true;
+                clearInterval(thinkingInterval);
+              }
+              const detail = formatToolInput(toolName, toolInput);
+              const toolStatus = `🔧 ${toolName}${detail}`;
+              replyMessage!
+                .edit({
+                  content: toolStatus.slice(0, DISCORD_MAX_LENGTH),
+                  components: [createProcessingButtons()],
+                })
+                .catch(() => {});
+            },
           },
           { skipPermissions, sessionId, channelId }
         );
@@ -2189,24 +2319,42 @@ async function processPrompt(
     // コードブロック内のコマンドは残す（表示用テキストなので消さない）
     const cleanText = stripCommandsFromDisplay(displayText);
 
-    // 2000 characters exceeded: split into multiple messages
-    const chunks = splitMessage(cleanText, DISCORD_SAFE_LENGTH);
-    if (chunks.length > 0 && chunks[0]) {
+    // === セパレータで明示的に分割（content-digest等で複数投稿を1応答に含める用途）
+    // LLMが前後に空白や余分な改行を入れることがあるため、正規表現で緩くマッチ
+    const SEPARATOR_REGEX = /\n\s*===\s*\n/;
+    const messageParts = SEPARATOR_REGEX.test(cleanText)
+      ? cleanText
+          .split(SEPARATOR_REGEX)
+          .map((p) => p.trim())
+          .filter(Boolean)
+      : [cleanText];
+
+    // 最初のパートはreplyMessageを編集して送信
+    const firstChunks = splitMessage(messageParts[0], DISCORD_SAFE_LENGTH);
+    if (firstChunks.length > 0 && firstChunks[0]) {
       // Remove processing buttons from the reply message
       await replyMessage!.edit({
-        content: chunks[0],
+        content: firstChunks[0],
         components: [],
       });
       // 最後に送信したメッセージIDを記録
       if (replyMessage) {
         lastSentMessageIds.set(message.channel.id, replyMessage.id);
       }
-      if (chunks.length > 1 && 'send' in message.channel) {
+      if ('send' in message.channel) {
         const channel = message.channel as unknown as {
           send: (content: string) => Promise<unknown>;
         };
-        for (let i = 1; i < chunks.length; i++) {
-          await channel.send(chunks[i]);
+        // 最初のパートの残りチャンク
+        for (let i = 1; i < firstChunks.length; i++) {
+          await channel.send(firstChunks[i]);
+        }
+        // 2つ目以降のパートは新規メッセージとして送信
+        for (let p = 1; p < messageParts.length; p++) {
+          const chunks = splitMessage(messageParts[p], DISCORD_SAFE_LENGTH);
+          for (const chunk of chunks) {
+            await channel.send(chunk);
+          }
         }
       }
     } else {

@@ -9,6 +9,11 @@ vi.mock('../src/persistent-runner.js', () => {
 
     constructor() {}
 
+    // EventEmitter stub for runner.on('session-invalidated', ...)
+    on(_event: string, _listener: (...args: unknown[]) => void) {
+      return this;
+    }
+
     async run(prompt: string) {
       this.currentPrompt = prompt;
       return { result: `response for: ${prompt}`, sessionId: 'session-123' };
