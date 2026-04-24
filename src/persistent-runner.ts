@@ -4,7 +4,7 @@ import type { RunOptions, RunResult, StreamCallbacks, AgentRunner } from './agen
 import { mergeTexts, sanitizeSurrogates } from './agent-runner.js';
 import { DEFAULT_TIMEOUT_MS } from './constants.js';
 import { buildPersistentSystemPrompt } from './base-runner.js';
-import type { ChatPlatform } from './config.js';
+import type { ChatPlatform } from './prompts/index.js';
 import { logPrompt, logResponse, logError } from './transcript-logger.js';
 
 /**
