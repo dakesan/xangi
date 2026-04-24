@@ -1699,19 +1699,33 @@ async function main() {
         const filePaths = extractFilePaths(result);
         const displayText = filePaths.length > 0 ? stripFilePaths(result) : result;
 
-        // 2000文字超の応答は分割送信（最初のチャンクに「解」Embed付き）
-        const textChunks = splitMessage(displayText, DISCORD_SAFE_LENGTH);
-        await thinkingMsg.edit({
-          content: textChunks[0] || '',
-        });
+        // === セパレータで明示的に分割（content-digest等で複数投稿を1応答に含める用途）
+        // LLMが前後に空白や余分な改行を入れることがあるため、正規表現で緩くマッチ
+        const SEPARATOR_REGEX = /\n\s*===\s*\n/;
+        const messageParts = SEPARATOR_REGEX.test(displayText)
+          ? displayText
+              .split(SEPARATOR_REGEX)
+              .map((p) => p.trim())
+              .filter(Boolean)
+          : [displayText];
+
+        // 最初のパートは既存のthinkingMsgを編集して送信
+        const firstChunks = splitMessage(messageParts[0], DISCORD_SAFE_LENGTH);
+        await thinkingMsg.edit(firstChunks[0] || '✅');
         // 最後に送信したメッセージIDを記録（スケジューラー経由）
         if ('id' in thinkingMsg) {
           lastSentMessageIds.set(channelId, (thinkingMsg as { id: string }).id);
         }
-        if (textChunks.length > 1) {
-          const ch = channel as { send: (content: string) => Promise<unknown> };
-          for (let i = 1; i < textChunks.length; i++) {
-            await ch.send(textChunks[i]);
+        const ch = channel as { send: (content: string) => Promise<unknown> };
+        // 最初のパートの残りチャンク
+        for (let i = 1; i < firstChunks.length; i++) {
+          await ch.send(firstChunks[i]);
+        }
+        // 2つ目以降のパートは新規メッセージとして送信
+        for (let p = 1; p < messageParts.length; p++) {
+          const textChunks = splitMessage(messageParts[p], DISCORD_SAFE_LENGTH);
+          for (const chunk of textChunks) {
+            await ch.send(chunk);
           }
         }
 
@@ -2189,24 +2203,42 @@ async function processPrompt(
     // コードブロック内のコマンドは残す（表示用テキストなので消さない）
     const cleanText = stripCommandsFromDisplay(displayText);
 
-    // 2000 characters exceeded: split into multiple messages
-    const chunks = splitMessage(cleanText, DISCORD_SAFE_LENGTH);
-    if (chunks.length > 0 && chunks[0]) {
+    // === セパレータで明示的に分割（content-digest等で複数投稿を1応答に含める用途）
+    // LLMが前後に空白や余分な改行を入れることがあるため、正規表現で緩くマッチ
+    const SEPARATOR_REGEX = /\n\s*===\s*\n/;
+    const messageParts = SEPARATOR_REGEX.test(cleanText)
+      ? cleanText
+          .split(SEPARATOR_REGEX)
+          .map((p) => p.trim())
+          .filter(Boolean)
+      : [cleanText];
+
+    // 最初のパートはreplyMessageを編集して送信
+    const firstChunks = splitMessage(messageParts[0], DISCORD_SAFE_LENGTH);
+    if (firstChunks.length > 0 && firstChunks[0]) {
       // Remove processing buttons from the reply message
       await replyMessage!.edit({
-        content: chunks[0],
+        content: firstChunks[0],
         components: [],
       });
       // 最後に送信したメッセージIDを記録
       if (replyMessage) {
         lastSentMessageIds.set(message.channel.id, replyMessage.id);
       }
-      if (chunks.length > 1 && 'send' in message.channel) {
+      if ('send' in message.channel) {
         const channel = message.channel as unknown as {
           send: (content: string) => Promise<unknown>;
         };
-        for (let i = 1; i < chunks.length; i++) {
-          await channel.send(chunks[i]);
+        // 最初のパートの残りチャンク
+        for (let i = 1; i < firstChunks.length; i++) {
+          await channel.send(firstChunks[i]);
+        }
+        // 2つ目以降のパートは新規メッセージとして送信
+        for (let p = 1; p < messageParts.length; p++) {
+          const chunks = splitMessage(messageParts[p], DISCORD_SAFE_LENGTH);
+          for (const chunk of chunks) {
+            await channel.send(chunk);
+          }
         }
       }
     } else {
