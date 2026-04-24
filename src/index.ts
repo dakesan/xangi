@@ -15,6 +15,7 @@ import {
   ButtonStyle,
 } from 'discord.js';
 import { loadConfig } from './config.js';
+import { resolveApproval, requestApproval, setApprovalEnabled } from './approval.js';
 import { createAgentRunner, getBackendDisplayName, type AgentRunner } from './agent-runner.js';
 import { ClaudeCodeRunner } from './claude-code.js';
 import { processManager } from './process-manager.js';
@@ -240,6 +241,11 @@ async function main() {
   // チャンネルモデル設定を初期化
   initChannelModels(dataDir);
 
+  // ツール承認の有効/無効（デフォルト無効）
+  if (process.env.APPROVAL_ENABLED === 'true') {
+    setApprovalEnabled(true);
+  }
+
   // スラッシュコマンド定義
   const commands: ReturnType<SlashCommandBuilder['toJSON']>[] = [
     new SlashCommandBuilder().setName('new').setDescription('新しいセッションを開始する').toJSON(),
@@ -377,6 +383,51 @@ async function main() {
     } catch (error) {
       console.error('[xangi] Failed to register slash commands:', error);
     }
+
+    // 承認サーバー起動（APPROVAL_ENABLED=true の場合のみ）
+    if (process.env.APPROVAL_ENABLED === 'true') {
+      const { startApprovalServer } = await import('./approval-server.js');
+      startApprovalServer(async (toolName, toolInput, dangerDescription) => {
+        // 承認チャンネル（autoReplyChannelsの最初のチャンネルを使用）
+        const approvalChannelId = config.discord.autoReplyChannels?.[0];
+        if (!approvalChannelId) return true; // チャンネル未設定なら許可
+        const channel = c.channels.cache.get(approvalChannelId);
+        if (!channel || !('send' in channel)) return true;
+
+        const cmdDisplay =
+          toolName === 'Bash'
+            ? `\`${String(toolInput.command || '').slice(0, 100)}\``
+            : `${toolName}: ${JSON.stringify(toolInput).slice(0, 100)}`;
+
+        return requestApproval(
+          approvalChannelId,
+          { command: cmdDisplay, matches: dangerDescription },
+          (approvalId, danger) => {
+            const row = new ActionRowBuilder<ButtonBuilder>().addComponents(
+              new ButtonBuilder()
+                .setCustomId(`xangi_approve_${approvalId}`)
+                .setLabel('許可')
+                .setStyle(ButtonStyle.Success),
+              new ButtonBuilder()
+                .setCustomId(`xangi_deny_${approvalId}`)
+                .setLabel('拒否')
+                .setStyle(ButtonStyle.Danger)
+            );
+            (
+              channel as unknown as {
+                send: (options: {
+                  content: string;
+                  components: ActionRowBuilder<ButtonBuilder>[];
+                }) => Promise<unknown>;
+              }
+            ).send({
+              content: `⚠️ **危険なコマンドを検知しました**\n${danger.command}\n検知理由: ${danger.matches.join(', ')}`,
+              components: [row],
+            });
+          }
+        );
+      });
+    }
   });
 
   // スラッシュコマンド処理
@@ -433,6 +484,20 @@ async function main() {
           content: `🧠 モデルを **Opus (${effort})** に設定しました`,
           ephemeral: true,
         });
+        return;
+      }
+
+      // Approval buttons: xangi_approve_*, xangi_deny_*
+      if (interaction.customId.startsWith('xangi_approve_')) {
+        const approvalId = interaction.customId.replace('xangi_approve_', '');
+        resolveApproval(approvalId, true);
+        await interaction.reply({ content: '✅ 許可しました', ephemeral: true });
+        return;
+      }
+      if (interaction.customId.startsWith('xangi_deny_')) {
+        const approvalId = interaction.customId.replace('xangi_deny_', '');
+        resolveApproval(approvalId, false);
+        await interaction.reply({ content: '❌ 拒否しました', ephemeral: true });
         return;
       }
 
