@@ -135,16 +135,24 @@ function createCompletedButtons(): ActionRowBuilder<ButtonBuilder>[] {
 
   const modelRow = new ActionRowBuilder<ButtonBuilder>().addComponents(
     new ButtonBuilder()
-      .setCustomId('xangi_model_opus_high')
-      .setLabel('Opus High')
+      .setCustomId('xangi_model_opus_xhigh')
+      .setLabel('Opus xHigh')
       .setStyle(ButtonStyle.Danger),
     new ButtonBuilder()
-      .setCustomId('xangi_model_opus_medium')
-      .setLabel('Opus Medium')
+      .setCustomId('xangi_model_opus_high')
+      .setLabel('Opus High')
       .setStyle(ButtonStyle.Primary),
     new ButtonBuilder()
-      .setCustomId('xangi_model_opus_low')
-      .setLabel('Opus Low')
+      .setCustomId('xangi_model_opus_medium')
+      .setLabel('Opus Med')
+      .setStyle(ButtonStyle.Secondary),
+    new ButtonBuilder()
+      .setCustomId('xangi_model_sonnet')
+      .setLabel('Sonnet')
+      .setStyle(ButtonStyle.Success),
+    new ButtonBuilder()
+      .setCustomId('xangi_model_haiku')
+      .setLabel('Haiku')
       .setStyle(ButtonStyle.Secondary)
   );
 
@@ -475,13 +483,29 @@ async function main() {
         return;
       }
 
-      // Model selection buttons: xangi_model_opus_{high,medium,low}
-      const modelMatch = interaction.customId.match(/^xangi_model_opus_(high|medium|low)$/);
-      if (modelMatch) {
-        const effort = modelMatch[1];
+      // Model selection buttons: xangi_model_{opus_xhigh,opus_high,opus_medium,sonnet,haiku}
+      const opusMatch = interaction.customId.match(/^xangi_model_opus_(xhigh|high|medium|low)$/);
+      if (opusMatch) {
+        const effort = opusMatch[1];
         setChannelModelConfig(channelId, { model: 'opus', effort });
         await interaction.reply({
           content: `🧠 モデルを **Opus (${effort})** に設定しました`,
+          ephemeral: true,
+        });
+        return;
+      }
+      if (interaction.customId === 'xangi_model_sonnet') {
+        setChannelModelConfig(channelId, { model: 'sonnet' });
+        await interaction.reply({
+          content: '🧠 モデルを **Sonnet** に設定しました',
+          ephemeral: true,
+        });
+        return;
+      }
+      if (interaction.customId === 'xangi_model_haiku') {
+        setChannelModelConfig(channelId, { model: 'haiku' });
+        await interaction.reply({
+          content: '🧠 モデルを **Haiku** に設定しました',
           ephemeral: true,
         });
         return;
@@ -2517,7 +2541,7 @@ function handleSettingsFromResponse(text: string, runner?: AgentRunner): void {
 // ─── Model Command Handlers ─────────────────────────────────────────
 
 const MODEL_CHOICES = ['sonnet', 'opus', 'haiku'];
-const EFFORT_CHOICES = ['low', 'medium', 'high'];
+const EFFORT_CHOICES = ['low', 'medium', 'high', 'xhigh'];
 
 async function handleModelAutocomplete(interaction: AutocompleteInteraction): Promise<void> {
   const focused = interaction.options.getFocused(true);
